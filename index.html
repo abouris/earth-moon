@@ -1,0 +1,190 @@
+<!DOCTYPE html><html><head><base href="https://3d-object-demo.websim.io/"><title>Interactive 3D Object Viewer</title>
+<script type="text/javascript" nonce="3ef5692b142a4420908a6375302" src="//local.adguard.org?ts=1721928253771&amp;type=content-script&amp;dmn=party.websim.ai&amp;url=https%3A%2F%2Fparty.websim.ai%2Fapi%2Fv1%2Fsites%2FW0I7Ra1WqDpk3hUMg%2Fhtml%3Fraw%3Dtrue&amp;app=com.google.Chrome&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script>
+<script type="text/javascript" nonce="3ef5692b142a4420908a6375302" src="//local.adguard.org?ts=1721928253771&amp;name=AdGuard%20Assistant&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  body { margin: 0; overflow: hidden; }
+  canvas { width: 100%; height: 100% }
+  #info {
+    position: absolute;
+    top: 10px;
+    width: 100%;
+    text-align: center;
+    color: white;
+    font-family: Arial, sans-serif;
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+<div id="info">Click and drag to rotate the Earth<br>Scroll to zoom in/out</div>
+<script>
+  let scene, camera, renderer, earth, moon, moonOrbit, saturnRings;
+
+  function init() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Create starfield background
+    const starGeometry = new THREE.BufferGeometry();
+    const starMaterial = new THREE.PointsMaterial({
+      color: 0xFFFFFF,
+      size: 0.05,
+      transparent: true
+    });
+
+    const starVertices = [];
+    for (let i = 0; i < 10000; i++) {
+      const x = (Math.random() - 0.5) * 2000;
+      const y = (Math.random() - 0.5) * 2000;
+      const z = (Math.random() - 0.5) * 2000;
+      starVertices.push(x, y, z);
+    }
+
+    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const stars = new THREE.Points(starGeometry, starMaterial);
+    scene.add(stars);
+
+    // Create Earth
+    const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+    const earthTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
+    const earthMaterial = new THREE.MeshPhongMaterial({ 
+      map: earthTexture,
+      specular: 0x333333,
+      shininess: 15 
+    });
+    earth = new THREE.Mesh(earthGeometry, earthMaterial);
+    scene.add(earth);
+
+    // Add clouds
+    const cloudGeometry = new THREE.SphereGeometry(1.02, 64, 64);
+    const cloudTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/planets/earth_clouds_1024.png');
+    const cloudMaterial = new THREE.MeshPhongMaterial({
+      map: cloudTexture,
+      transparent: true,
+      opacity: 0.8
+    });
+    const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+    earth.add(clouds);
+
+    // Add atmosphere glow
+    const atmosphereGeometry = new THREE.SphereGeometry(1.1, 64, 64);
+    const atmosphereMaterial = new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        void main() {
+          float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+          gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity;
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide
+    });
+    const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+    scene.add(atmosphere);
+
+    // Create Moon
+    const moonGeometry = new THREE.SphereGeometry(0.27, 32, 32);
+    const moonTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/planets/moon_1024.jpg');
+    const moonMaterial = new THREE.MeshPhongMaterial({ map: moonTexture });
+    moon = new THREE.Mesh(moonGeometry, moonMaterial);
+    
+    // Create Moon Orbit
+    moonOrbit = new THREE.Object3D();
+    moonOrbit.add(moon);
+    scene.add(moonOrbit);
+    
+    // Position Moon
+    moon.position.set(2, 0, 0);
+
+    // Add Saturn-like rings to Earth
+    const ringGeometry = new THREE.RingGeometry(1.5, 2.5, 64);
+    const ringTexture = new THREE.TextureLoader().load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/saturn-rings.png');
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      map: ringTexture,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8
+    });
+    saturnRings = new THREE.Mesh(ringGeometry, ringMaterial);
+    saturnRings.rotation.x = Math.PI / 2;
+    scene.add(saturnRings);
+
+    const light = new THREE.PointLight(0xffffff, 1.5, 100);
+    light.position.set(5, 3, 5);
+    scene.add(light);
+
+    const ambientLight = new THREE.AmbientLight(0x404040);
+    scene.add(ambientLight);
+
+    camera.position.z = 3;
+
+    window.addEventListener('resize', onWindowResize, false);
+    document.addEventListener('mousedown', onMouseDown, false);
+    document.addEventListener('wheel', onMouseWheel, false);
+  }
+
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  function onMouseDown(event) {
+    document.addEventListener('mousemove', onMouseMove, false);
+    document.addEventListener('mouseup', onMouseUp, false);
+  }
+
+  function onMouseMove(event) {
+    const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+    const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+
+    earth.rotation.y += movementX * 0.01;
+    earth.rotation.x += movementY * 0.01;
+    saturnRings.rotation.y += movementX * 0.01;
+    saturnRings.rotation.z -= movementY * 0.01;
+  }
+
+  function onMouseUp(event) {
+    document.removeEventListener('mousemove', onMouseMove, false);
+    document.removeEventListener('mouseup', onMouseUp, false);
+  }
+
+  function onMouseWheel(event) {
+    camera.position.z += event.deltaY * 0.01;
+    camera.position.z = Math.max(1.5, Math.min(camera.position.z, 10));
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    // Rotate Earth on its axis
+    earth.rotation.y += 0.0005;
+
+    // Rotate Moon around Earth
+    moonOrbit.rotation.y += 0.002;
+
+    // Rotate Moon on its axis (tidally locked to Earth)
+    moon.rotation.y += 0.002;
+
+    // Rotate Saturn-like rings
+    saturnRings.rotation.z += 0.0002;
+
+    renderer.render(scene, camera);
+  }
+
+  init();
+  animate();
+</script>
+
+</body></html>
